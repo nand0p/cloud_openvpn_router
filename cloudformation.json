@@ -1,0 +1,195 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Cloud OpenVPN Router",
+  "Parameters": {
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t2.small"
+    },
+    "InstanceImage": { 
+      "Type": "String",
+      "Default": "ami-f5f41398"
+    },
+    "OvpnAZ": {
+      "Type": "String",
+      "Default": "us-east-1c"
+    },
+    "OvpnPort": { "Type": "String" },
+    "OvpnCidr": { "Type": "String" },
+    "OvpnSshIP": { "Type": "String" },
+    "PrivateKey": { "Type": "String" },
+    "KeyName": { "Type": "AWS::EC2::KeyPair::KeyName" }
+  },
+  "Resources": {
+    "OvpnVirtualPrivateCloud": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "CidrBlock": { "Ref": "OvpnCidr" },
+        "Tags": [{
+          "Key": "Name",
+          "Value": { "Ref": "AWS::StackName" }
+        }]
+      }
+    },
+    "OvpnSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": { "Ref": "OvpnAZ" },
+        "VpcId": { "Ref": "OvpnVirtualPrivateCloud" },
+        "CidrBlock": { "Ref": "OvpnCidr" },
+        "Tags": [ {
+          "Key": "Name",
+          "Value": { "Ref": "AWS::StackName" }
+        } ]
+      }
+    },
+    "OvpnInternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [{
+          "Key": "Name",
+          "Value": { "Ref": "AWS::StackName" }
+        }]
+      }
+    },
+    "OvpnInternetGatewayAttach": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": { "Ref": "OvpnVirtualPrivateCloud" },
+        "InternetGatewayId": { "Ref": "OvpnInternetGateway" }
+      }
+    },
+    "OvpnRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": { "Ref": "OvpnVirtualPrivateCloud" }
+      }
+    },
+    "OvpnDefaultRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": { "Ref": "OvpnRouteTable" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "OvpnInternetGateway" }
+      }
+    },
+    "OvpnRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "OvpnSubnet" },
+        "RouteTableId": { "Ref": "OvpnRouteTable" }
+      }
+    },
+    "OvpnSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Cloud OpenVPN Router",
+        "VpcId": { "Ref": "OvpnVirtualPrivateCloud" },
+        "Tags": [{
+          "Key": "Name",
+          "Value": { "Ref": "AWS::StackName" }
+        }],
+        "SecurityGroupIngress": [ 
+          {
+            "IpProtocol": "tcp",
+            "FromPort": { "Ref": "OvpnPort" },
+            "ToPort": { "Ref": "OvpnPort" },
+            "CidrIp": "0.0.0.0/0"
+          }, 
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": { "Fn::Join" : [ "", [ { "Ref": "OvpnSshIP" }, "/32" ] ] }
+          }
+        ]
+      }
+    },
+    "OvpnLaunchConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "DependsOn": "OvpnInternetGatewayAttach",
+      "Properties": {
+        "AssociatePublicIpAddress": "true",
+        "ImageId": { "Ref": "InstanceImage" },
+        "InstanceType": { "Ref": "InstanceType" },
+        "KeyName": { "Ref": "KeyName" },
+        "SecurityGroups": [ { "Ref": "OvpnSecurityGroup" } ],
+        "UserData": { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#cloud-config\n\n",
+          "repo_update: true\n",
+          "repo_upgrade: all\n\n",
+          "packages:\n",
+          " - openvpn\n\n",
+          "runcmd:\n",
+          " - logger cloud-openvpn-router'\n",
+          " - touch /root/cloud-openvpn-router\n"
+	  ]]}
+        }
+      }
+    },
+    "OvpnAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "HealthCheckType": "ELB",
+        "HealthCheckGracePeriod": "60",
+        "LaunchConfigurationName": { "Ref": "OvpnLaunchConfiguration" },
+        "LoadBalancerNames": [ { "Ref": "OvpnElasticLoadBalancer" } ],
+        "MaxSize": "1",
+        "MinSize": "1",
+        "Tags": [ {
+          "Key": "Name",
+          "Value": { "Ref": "AWS::StackName" },
+          "PropagateAtLaunch": "true"
+        } ],
+        "VPCZoneIdentifier" : [ { "Ref": "OvpnSubnet" } ]
+      }
+    },
+    "OvpnElasticLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "SecurityGroups": [ { "Fn::GetAtt" : [ "OvpnSecurityGroup", "GroupId" ] } ],
+        "Subnets": [ { "Ref": "OvpnSubnet" } ],
+        "Listeners": [ {
+          "LoadBalancerPort": { "Ref": "OvpnPort" },
+          "InstancePort": { "Ref": "OvpnPort" },
+          "Protocol": "TCP"
+        } ],
+        "HealthCheck": {
+          "Target" : { "Fn::Join" : [ "", [ "TCP:", { "Ref" : "OvpnPort" } ] ] },
+          "HealthyThreshold": "2",
+          "UnhealthyThreshold": "2",
+          "Interval": "10",
+          "Timeout": "5"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "StackName": {
+      "Value": { "Ref": "AWS::StackName" }
+    },
+    "KeyName": {
+      "Value": { "Ref": "KeyName" }
+    },
+    "OvpnVirtualPrivateCloud": {
+      "Value": { "Ref": "OvpnVirtualPrivateCloud" }
+    },
+    "OvpnSubnet": {
+      "Value": { "Ref": "OvpnSubnet" }
+    },
+    "OvpnCidr": {
+      "Value": { "Ref": "OvpnCidr" }
+    },
+    "OvpnSshIP": {
+      "Value": { "Ref": "OvpnSshIP" }
+    },
+    "OvpnPort": {
+      "Value": { "Ref": "OvpnPort" }
+    },
+    "OvpnDnsName": {
+      "Value": { "Fn::GetAtt" : [ "OvpnElasticLoadBalancer", "DNSName" ] }
+    }
+  }
+}
