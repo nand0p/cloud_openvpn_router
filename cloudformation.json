@@ -122,9 +122,30 @@
           "repo_upgrade: all\n\n",
           "packages:\n",
           " - openvpn\n\n",
+          "write_files:\n",
+          " - content: |\n",
+          "     dev-type tun\n",
+          "     dev-node /dev/net/tun\n",
+          "     writepid /var/run/openvpn_server.pid\n",
+          "     script-security 3\n",
+          "     daemon\n",
+          "     keepalive 10 60\n",
+          "     ping-timer-rem\n",
+          "     persist-tun\n",
+          "     persist-key\n",
+          "     proto tcp-server\n",
+          "     cipher AES-128-CBC\n",
+          "     auth SHA1\n",
+          "     ifconfig 10.10.11.1 10.10.11.2\n",
+          "     lport ", { "Ref": "OvpnPort" }, "\n",
+          "     management /tmp/server.sock unix\n",
+          "     #secret /etc/openvpn/server.secret\n\n",
+          "   path: /etc/openvpn/server.conf\n",
           "runcmd:\n",
-          " - logger cloud-openvpn-router'\n",
-          " - touch /root/cloud-openvpn-router\n"
+          " - logger ", { "Ref" : "AWS::StackName" }, "\n",
+          " - touch /root/", { "Ref" : "AWS::StackName" }, "\n",
+          " - echo 1 > /proc/sys/net/ipv4/ip_forward\n",
+          " - openvpn --config /etc/openvpn/server.conf\n"
 	  ]]}
         }
       }
@@ -138,12 +159,12 @@
         "LoadBalancerNames": [ { "Ref": "OvpnElasticLoadBalancer" } ],
         "MaxSize": "1",
         "MinSize": "1",
+        "VPCZoneIdentifier" : [ { "Ref": "OvpnSubnet" } ],
         "Tags": [ {
           "Key": "Name",
           "Value": { "Ref": "AWS::StackName" },
           "PropagateAtLaunch": "true"
-        } ],
-        "VPCZoneIdentifier" : [ { "Ref": "OvpnSubnet" } ]
+        } ]
       }
     },
     "OvpnElasticLoadBalancer": {
