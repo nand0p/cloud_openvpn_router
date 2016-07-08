@@ -1,9 +1,14 @@
 Cloud OpenVPN Router
 
 This code launches an OpenVPN server in an AWS VPC.
-- Cloudformation is used for launching all resources
-- ASG with min/max of 1 and healthchecks ensures availability
-- Openvpn is configured via cloudinit userdata
+
+
+- Cloudformation
+- Ansible
+- Terraform
+- Docker
+- Vagrant
+
 
 The cloud openvpn server functions as a router between the
 connecting clients. This allows remote offices, possibly with
