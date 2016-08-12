@@ -1,0 +1,90 @@
+---
+- hosts: localhost
+  connection: local
+  tasks:
+    - debug: var=timestamp
+
+    - name: delete old code
+      file:
+        path: /tmp/openvpn
+        state: absent
+      register: delete_old_code
+
+    - debug: var=delete_old_code
+
+    - name: clone openvpn
+      git: repo=https://github.com/OpenVPN/openvpn.git
+           dest=/tmp/openvpn
+           accept_hostkey=yes
+           force=yes
+           recursive=no
+      register: openvpn_clone
+
+    - debug: var=openvpn_clone
+
+    - name: autoconf openvpn
+      command: autoreconf -i -v -f
+      args:
+        chdir: /tmp/openvpn
+      register: openvpn_autoconf
+
+    - debug: var=openvpn_autoconf
+
+    - name: configure openvpn
+      command: ./configure
+      args: 
+        chdir: /tmp/openvpn
+      register: openvpn_configure
+
+    - debug: var=openvpn_configure.stdout
+
+    - name: make openvpn
+      command: make
+      args:
+        chdir: /tmp/openvpn
+      register: openvpn_make
+
+    - debug: var=openvpn_make.stdout
+
+    - name: install openvpn
+      command: make install
+      args:
+        chdir: /tmp/openvpn
+      become: yes
+      register: openvpn_install
+
+    - debug: var=openvpn_install
+
+    - name: make openvpn directory
+      file:
+        path: /etc/openvpn
+        state: directory      
+      become: yes
+      register: openvpn_dir
+
+    - debug: var=openvpn_dir
+
+    - name: write out templatized configuration
+      template:
+        src: ansible_openvpn.conf.j2
+        dest: /etc/openvpn/server.conf
+      become: yes
+      register: openvpn_template
+
+    - debug: var=openvpn_template
+
+    - name: fire up openvpn
+      command: /usr/local/sbin/openvpn --config /etc/openvpn/server.conf
+      become: yes
+      register: openvpn_start
+
+    - debug: var=openvpn_start
+
+    - name: clean up
+      file:
+        path: /tmp/openvpn
+        state: absent
+      register: openvpn_clean_up
+
+    - debug: var=openvpn_clean_up
+

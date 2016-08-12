@@ -1,0 +1,18 @@
+daemon
+verb 6
+dev-type tun
+dev-node /dev/net/tun
+log-append /var/log/openvpn.log
+writepid /var/run/openvpn_server.pid
+script-security 3
+keepalive 10 60
+ping-timer-rem
+persist-tun
+persist-key
+proto tcp-server
+cipher AES-128-CBC
+auth SHA1
+ifconfig 10.10.11.1 10.10.11.2
+lport 443
+management /tmp/server.sock unix
+#secret /etc/openvpn/server.secret
